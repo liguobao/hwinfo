@@ -6,96 +6,39 @@
 #include <string>
 #include <vector>
 
-#include "hwinfo/cpuid.h"
-#include "hwinfo/platform.h"
-
 namespace hwinfo {
 
 // _____________________________________________________________________________________________________________________
-CPU::CPU(int id) { _id = id; }
+int CPU::id() const { return _id; }
 
 // _____________________________________________________________________________________________________________________
-std::string& CPU::modelName() {
-  if (_modelName.empty()) {
-    _modelName = std::move(getModelName());
-  }
-  return _modelName;
-}
+const std::string& CPU::modelName() const { return _modelName; }
 
 // _____________________________________________________________________________________________________________________
-std::string& CPU::vendor() {
-  if (_vendor.empty()) {
-    _vendor = std::move(getVendor());
-  }
-  return _vendor;
-}
+const std::string& CPU::vendor() const { return _vendor; }
 
 // _____________________________________________________________________________________________________________________
-int CPU::cacheSize_Bytes() {
-  if (_cacheSize_Bytes == -1) {
-    _cacheSize_Bytes = getCacheSize_Bytes();
-  }
-  return _cacheSize_Bytes;
-}
+int64_t CPU::L1CacheSize_Bytes() const { return _L1CacheSize_Bytes; }
 
 // _____________________________________________________________________________________________________________________
-int CPU::numPhysicalCores() {
-  if (_numPhysicalCores == -1) {
-    _numPhysicalCores = getNumPhysicalCores();
-  }
-  return _numPhysicalCores;
-}
+int64_t CPU::L2CacheSize_Bytes() const { return _L2CacheSize_Bytes; }
 
 // _____________________________________________________________________________________________________________________
-int CPU::numLogicalCores() {
-  if (_numLogicalCores == -1) {
-    _numLogicalCores = getNumLogicalCores();
-  }
-  return _numLogicalCores;
-}
+int64_t CPU::L3CacheSize_Bytes() const { return _L3CacheSize_Bytes; }
 
 // _____________________________________________________________________________________________________________________
-int CPU::maxClockSpeed_kHz() {
-  if (_maxClockSpeed_kHz == -1) {
-    _maxClockSpeed_kHz = getMaxClockSpeed_kHz();
-  }
-  return _maxClockSpeed_kHz;
-}
+int CPU::numPhysicalCores() const { return _numPhysicalCores; }
 
 // _____________________________________________________________________________________________________________________
-int CPU::regularClockSpeed_kHz() {
-  if (_regularClockSpeed_kHz == -1) {
-    _regularClockSpeed_kHz = getRegularClockSpeed_kHz();
-  }
-  return _regularClockSpeed_kHz;
-}
+int CPU::numLogicalCores() const { return _numLogicalCores; }
 
 // _____________________________________________________________________________________________________________________
-InstructionSet& CPU::instructionSet() {
-  if (!_instructionSet._init_) {
-#if defined(HWINFO_X86)
-    uint32_t regs[4]{};
-    cpuid::cpuid(1, 0, regs);
-    _instructionSet = InstructionSet{static_cast<bool>(regs[3] & AVX_POS),
-                                     static_cast<bool>(regs[3] & SSE_POS),
-                                     static_cast<bool>(regs[3] & SSE2_POS),
-                                     static_cast<bool>(regs[2] & SSE3_POS),
-                                     static_cast<bool>(regs[2] & SSE41_POS),
-                                     static_cast<bool>(regs[2] & SSE42_POS),
-                                     static_cast<bool>(regs[2] & AVX_POS),
-                                     false,
-                                     true};
-    cpuid::cpuid(7, 0, regs);
-    _instructionSet._isAVX2 = static_cast<bool>(regs[1] & AVX2_POS);
-#else
-    _instructionSet = InstructionSet();
-#endif
-  }
-  return _instructionSet;
-}
+int64_t CPU::maxClockSpeed_MHz() const { return _maxClockSpeed_MHz; }
 
-// ===== Socket ========================================================================================================
 // _____________________________________________________________________________________________________________________
-CPU& Socket::CPU() { return _cpu; }
+int64_t CPU::regularClockSpeed_MHz() const { return _regularClockSpeed_MHz; }
+
+// _____________________________________________________________________________________________________________________
+const std::vector<std::string>& CPU::flags() const { return _flags; }
 
 }  // namespace hwinfo

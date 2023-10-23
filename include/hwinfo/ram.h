@@ -3,38 +3,34 @@
 
 #pragma once
 
+#include <hwinfo/platform.h>
+
+#include <cstdint>
 #include <string>
 
 namespace hwinfo {
 
 class RAM {
  public:
-  RAM() = default;
-  RAM(std::string& vendor, std::string& name, std::string& model, std::string& serialNumber, int64_t size_Bytes);
+  RAM();
   ~RAM() = default;
 
-  std::string& vendor();
-  std::string& name();
-  std::string& model();
-  std::string& serialNumber();
-  int64_t totalSize_Bytes();
-  int64_t availableMemory();
-
-  static std::string getVendor();
-  static std::string getName();
-  static std::string getModel();
-  static std::string getSerialNumber();
-  static int64_t getTotalSize_Bytes();
-  static int64_t getAvailableMemory();
+  HWI_NODISCARD const std::string& vendor() const;
+  HWI_NODISCARD const std::string& name() const;
+  HWI_NODISCARD const std::string& model() const;
+  HWI_NODISCARD const std::string& serialNumber() const;
+  HWI_NODISCARD int64_t total_Bytes() const;
+  HWI_NODISCARD int64_t frequency_Hz() const;
+  int64_t free_Bytes();
+  int64_t available_Bytes();
 
  private:
-  std::string _vendor;
-  std::string _name;
-  std::string _model;
-  std::string _serialNumber;
-  int64_t _totalSize_Bytes = -1;
-  int64_t _totalFreeSize_Bytes = -1;
-  int _clockSpeed = -1;
+  std::string _vendor{"<unknown>"};
+  std::string _name{"<unknown>"};
+  std::string _model{"<unknown>"};
+  std::string _serialNumber{"<unknown>"};
+  int64_t _total_Bytes = -1;
+  int64_t _frequency_Hz = -1;
 };
 
 }  // namespace hwinfo

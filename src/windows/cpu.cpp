@@ -1,234 +1,150 @@
 // Copyright (c) Leon Freist <freist@informatik.uni-freiburg.de>
 // This software is part of HWBenchmark
 
-#include "hwinfo/platform.h"
+#include <hwinfo/platform.h>
 
 #ifdef HWINFO_WINDOWS
+
+#include <hwinfo/cpu.h>
+#include <hwinfo/cpuid.h>
+#include <hwinfo/utils/stringutils.h>
+#include <hwinfo/utils/wmi_wrapper.h>
 
 #include <algorithm>
 #include <string>
 #include <vector>
 
-#include "hwinfo/WMIwrapper.h"
-#include "hwinfo/cpu.h"
-#include "hwinfo/cpuid.h"
-
 namespace hwinfo {
 
+// =====================================================================================================================
 // _____________________________________________________________________________________________________________________
-int CPU::currentClockSpeed_kHz() {
-  std::vector<int64_t> speed{};
-  wmi::queryWMI("Win32_Processor", "CurrentClockSpeed", speed);
-  if (speed.empty()) {
+int64_t CPU::currentClockSpeed_MHz(int thread_id) const {
+  auto data = utils::WMI::query<std::string>(L"Win32_PerfFormattedData_Counters_ProcessorInformation",
+                                             L"PercentProcessorPerformance");
+  if (data.empty()) {
     return -1;
   }
-  return speed[0];
+  double performance = std::stod(data[thread_id]) / 100;
+  return static_cast<int64_t>(static_cast<double>(_maxClockSpeed_MHz) * performance);
 }
 
 // _____________________________________________________________________________________________________________________
-std::string CPU::getVendor() {
-  std::vector<const wchar_t*> vendor{};
-  wmi::queryWMI("Win32_Processor", "Manufacturer", vendor);
-  if (vendor.empty()) {
-#if defined(HWINFO_X86)
-    std::string v;
-    uint32_t regs[4]{0};
-    cpuid::cpuid(0, 0, regs);
-    v += std::string((const char*)&regs[1], 4);
-    v += std::string((const char*)&regs[3], 4);
-    v += std::string((const char*)&regs[2], 4);
-    return v;
-#else
-    return "<unknown>";
-#endif
+std::vector<int64_t> CPU::currentClockSpeed_MHz() const {
+  std::vector<int64_t> result;
+  result.reserve(_numLogicalCores);
+  auto data = utils::WMI::query<std::string>(L"Win32_PerfFormattedData_Counters_ProcessorInformation",
+                                             L"PercentProcessorPerformance");
+  if (data.empty()) {
+    result.resize(_numLogicalCores, -1);
+    return result;
   }
-  std::wstring tmp(vendor[0]);
-  return {tmp.begin(), tmp.end()};
-  return "<unknown>";
+  for (auto& v : data) {
+    double performance = std::stod(v) / 100;
+    result.push_back(static_cast<int64_t>(static_cast<double>(_maxClockSpeed_MHz) * performance));
+  }
+  return result;
 }
 
-// _____________________________________________________________________________________________________________________
-std::string CPU::getModelName() {
-  std::vector<const wchar_t*> vendor{};
-  wmi::queryWMI("Win32_Processor", "Name", vendor);
-  if (vendor.empty()) {
-#if defined(HWINFO_X86)
-    std::string model;
-    uint32_t regs[4]{};
-    for (unsigned i = 0x80000002; i < 0x80000005; ++i) {
-      cpuid::cpuid(i, 0, regs);
-      for (auto c : std::string((const char*)&regs[0], 4)) {
-        if (std::isalnum(c) || c == '(' || c == ')' || c == '@' || c == ' ' || c == '-' || c == '.') {
-          model += c;
-        }
-      }
-      for (auto c : std::string((const char*)&regs[1], 4)) {
-        if (std::isalnum(c) || c == '(' || c == ')' || c == '@' || c == ' ' || c == '-' || c == '.') {
-          model += c;
-        }
-      }
-      for (auto c : std::string((const char*)&regs[2], 4)) {
-        if (std::isalnum(c) || c == '(' || c == ')' || c == '@' || c == ' ' || c == '-' || c == '.') {
-          model += c;
-        }
-      }
-      for (auto c : std::string((const char*)&regs[3], 4)) {
-        if (std::isalnum(c) || c == '(' || c == ')' || c == '@' || c == ' ' || c == '-' || c == '.') {
-          model += c;
-        }
-      }
+double CPU::currentUtilisation() const {
+  auto res = utils::WMI::query<std::string>(L"Win32_PerfFormattedData_Counters_ProcessorInformation",
+                                            L"PercentProcessorUtility", L"Name=" + std::to_wstring(0) + L",_Total");
+  if (res.empty()) {
+    return -1.f;
+  }
+  return std::stod(res[0]);
+}
+
+double CPU::threadUtilisation(int thread_id) const {
+  auto data = utils::WMI::query<std::string>(L"Win32_PerfFormattedData_Counters_ProcessorInformation",
+                                             L"PercentProcessorUtility");
+  if (data.empty()) {
+    return -1.f;
+  }
+  std::string thread_value = data[thread_id];
+  if (thread_value.empty()) {
+    return -1.f;
+  }
+  return std::stod(thread_value);
+}
+
+std::vector<double> CPU::threadsUtilisation() const {
+  std::vector<double> thread_utility;
+  thread_utility.reserve(_numLogicalCores);
+  auto data = utils::WMI::query<std::string>(L"Win32_PerfFormattedData_Counters_ProcessorInformation",
+                                             L"PercentProcessorUtility");
+  if (data.empty()) {
+    thread_utility.resize(_numLogicalCores, -1.f);
+    return thread_utility;
+  }
+  for (const auto& v : data) {
+    if (v.empty()) {
+      thread_utility.push_back(-1.f);
+    } else {
+      thread_utility.push_back(std::stod(v) / 100.f);
     }
-    return model;
-#else
-    return "<unknown>";
-#endif
   }
-  std::wstring tmp(vendor[0]);
-  return {tmp.begin(), tmp.end()};
-}
-
-// _____________________________________________________________________________________________________________________
-int CPU::getNumPhysicalCores() {
-  std::vector<int> cores{};
-  wmi::queryWMI("Win32_Processor", "NumberOfCores", cores);
-  if (cores.empty()) {
-#if defined(HWINFO_X86)
-    uint32_t regs[4]{};
-    std::string vendorId = getVendor();
-    std::for_each(vendorId.begin(), vendorId.end(), [](char& in) { in = ::toupper(in); });
-    cpuid::cpuid(0, 0, regs);
-    uint32_t HFS = regs[0];
-    if (vendorId.find("INTEL") != std::string::npos) {
-      if (HFS >= 11) {
-        for (int lvl = 0; lvl < MAX_INTEL_TOP_LVL; ++lvl) {
-          uint32_t regs_2[4]{};
-          cpuid::cpuid(0x0b, lvl, regs_2);
-          uint32_t currLevel = (LVL_TYPE & regs_2[2]) >> 8;
-          if (currLevel == 0x01) {
-            int numCores = getNumLogicalCores() / static_cast<int>(LVL_CORES & regs_2[1]);
-            if (numCores > 0) {
-              return numCores;
-            }
-          }
-        }
-      } else {
-        if (HFS >= 4) {
-          uint32_t regs_3[4]{};
-          cpuid::cpuid(4, 0, regs_3);
-          int numCores = getNumLogicalCores() / static_cast<int>(1 + ((regs_3[0] >> 26) & 0x3f));
-          if (numCores > 0) {
-            return numCores;
-          }
-        }
-      }
-    } else if (vendorId.find("AMD") != std::string::npos) {
-      if (HFS > 0) {
-        uint32_t regs_4[4]{};
-        cpuid::cpuid(0x80000000, 0, regs_4);
-        if (regs_4[0] >= 8) {
-          int numCores = 1 + (regs_4[2] & 0xff);
-          return numCores;
-        }
-      }
-    }
-    return -1;
-#else
-    return -1;
-#endif
-  }
-  return cores[0];
-}
-
-// _____________________________________________________________________________________________________________________
-int CPU::getNumLogicalCores() {
-  std::vector<int> cores{};
-  wmi::queryWMI("Win32_Processor", "NumberOfLogicalProcessors", cores);
-  if (cores.empty()) {
-#if defined(HWINFO_X86)
-    std::string vendorId = getVendor();
-    std::for_each(vendorId.begin(), vendorId.end(), [](char& in) { in = ::toupper(in); });
-    uint32_t regs[4]{};
-    cpuid::cpuid(0, 0, regs);
-    uint32_t HFS = regs[0];
-    if (vendorId.find("INTEL") != std::string::npos) {
-      if (HFS >= 0xb) {
-        for (int lvl = 0; lvl < MAX_INTEL_TOP_LVL; ++lvl) {
-          uint32_t regs_2[4]{};
-          cpuid::cpuid(0x0b, lvl, regs_2);
-          uint32_t currLevel = (LVL_TYPE & regs_2[2]) >> 8;
-          if (currLevel == 0x02) {
-            return static_cast<int>(LVL_CORES & regs_2[1]);
-          }
-        }
-      }
-    } else if (vendorId.find("AMD") != std::string::npos) {
-      if (HFS > 0) {
-        cpuid::cpuid(1, 0, regs);
-        return static_cast<int>(regs[1] >> 16) & 0xff;
-      }
-      return 1;
-    }
-    return -1;
-#else
-    return -1;
-#endif
-  }
-  return cores[0];
-}
-
-// _____________________________________________________________________________________________________________________
-int CPU::getMaxClockSpeed_kHz() {
-  std::vector<int64_t> speed{};
-  wmi::queryWMI("Win32_Processor", "MaxClockSpeed", speed);
-  if (speed.empty()) {
-    return -1;
-  }
-  return speed[0] * 1000;
-}
-
-// _____________________________________________________________________________________________________________________
-int CPU::getRegularClockSpeed_kHz() {
-  std::vector<int64_t> speed{};
-  wmi::queryWMI("Win32_Processor", "CurrentClockSpeed", speed);
-  if (speed.empty()) {
-    return -1;
-  }
-  return speed[0] * 1000;
-}
-
-int CPU::getCacheSize_Bytes() {
-  std::vector<int64_t> cacheSize{};
-  wmi::queryWMI("Win32_Processor", "L3CacheSize", cacheSize);
-  if (cacheSize.empty()) {
-    return -1;
-  }
-  return cacheSize[0] * 1024;
+  return thread_utility;
 }
 
 // =====================================================================================================================
 // _____________________________________________________________________________________________________________________
-// Helper function for linux: parses /proc/cpuinfo. socket_id == physical_id.
-// _____________________________________________________________________________________________________________________
-std::optional<CPU> getCPU(uint8_t socket_id) { return {}; }
-
-// ===== Socket ========================================================================================================
-// _____________________________________________________________________________________________________________________
-Socket::Socket(uint8_t id) : _id(id) {
-  auto cpu = getCPU(_id);
-  if (cpu.has_value()) {
-    _cpu = cpu.value();
+std::vector<CPU> getAllCPUs() {
+  utils::WMI::_WMI wmi;
+  const std::wstring query_string(
+      L"SELECT Name, Manufacturer, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, L2CacheSize, L3CacheSize "
+      L"FROM Win32_Processor");
+  bool success = wmi.execute_query(query_string);
+  if (!success) {
+    return {};
   }
-}
+  std::vector<CPU> cpus;
 
-// _____________________________________________________________________________________________________________________
-Socket::Socket(uint8_t id, const class CPU& cpu) : _id(id) { _cpu = cpu; }
-
-// =====================================================================================================================
-// _____________________________________________________________________________________________________________________
-std::vector<Socket> getAllSockets() {
-  std::vector<Socket> sockets;
-
-  return {};
+  ULONG u_return = 0;
+  IWbemClassObject* obj = nullptr;
+  int cpu_id = 0;
+  while (wmi.enumerator) {
+    wmi.enumerator->Next(WBEM_INFINITE, 1, &obj, &u_return);
+    if (!u_return) {
+      break;
+    }
+    CPU cpu;
+    cpu._id = cpu_id++;
+    VARIANT vt_prop;
+    HRESULT hr;
+    hr = obj->Get(L"Name", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      cpu._modelName = utils::wstring_to_std_string(vt_prop.bstrVal);
+    }
+    hr = obj->Get(L"Manufacturer", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      cpu._vendor = utils::wstring_to_std_string(vt_prop.bstrVal);
+    }
+    hr = obj->Get(L"NumberOfCores", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      cpu._numPhysicalCores = vt_prop.intVal;
+    }
+    hr = obj->Get(L"NumberOfLogicalProcessors", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      cpu._numLogicalCores = vt_prop.intVal;
+    }
+    hr = obj->Get(L"MaxClockSpeed", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      cpu._maxClockSpeed_MHz = vt_prop.uintVal;
+      cpu._regularClockSpeed_MHz = vt_prop.uintVal;
+    }
+    hr = obj->Get(L"L2CacheSize", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      cpu._L2CacheSize_Bytes = vt_prop.uintVal;
+    }
+    hr = obj->Get(L"L3CacheSize", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      cpu._L3CacheSize_Bytes = vt_prop.uintVal;
+    }
+    VariantClear(&vt_prop);
+    obj->Release();
+    cpus.push_back(std::move(cpu));
+  }
+  return cpus;
 }
 
 }  // namespace hwinfo

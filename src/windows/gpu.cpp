@@ -1,61 +1,84 @@
 // Copyright Leon Freist
 // Author Leon Freist <freist@informatik.uni-freiburg.de>
 
-#include "hwinfo/platform.h"
+#include <hwinfo/platform.h>
 
 #ifdef HWINFO_WINDOWS
 
+#include <hwinfo/gpu.h>
+#include <hwinfo/utils/stringutils.h>
+#include <hwinfo/utils/wmi_wrapper.h>
+
+#include <algorithm>
 #include <string>
 #include <vector>
-
-#include "hwinfo/WMIwrapper.h"
 #pragma comment(lib, "wbemuuid.lib")
 
-#include "hwinfo/gpu.h"
+#ifdef USE_OCL
+#include <missocl/opencl.h>
+#endif
 
 namespace hwinfo {
 
 // _____________________________________________________________________________________________________________________
-std::string GPU::getVendor() {
-  std::vector<const wchar_t*> vendor{};
-  wmi::queryWMI("WIN32_VideoController", "AdapterCompatibility", vendor);
-  auto ret = vendor[0];
-  if (!ret) {
-    return "<unknown>";
+std::vector<GPU> getAllGPUs() {
+  utils::WMI::_WMI wmi;
+  const std::wstring query_string(
+      L"SELECT Name, AdapterCompatibility, DriverVersion, AdapterRam "
+      L"FROM WIN32_VideoController");
+  bool success = wmi.execute_query(query_string);
+  if (!success) {
+    return {};
   }
-  std::wstring tmp(ret);
-  return {tmp.begin(), tmp.end()};
-}
+  std::vector<GPU> gpus;
 
-// _____________________________________________________________________________________________________________________
-std::string GPU::getName() {
-  std::vector<const wchar_t*> names{};
-  wmi::queryWMI("WIN32_VideoController", "Name", names);
-  auto ret = names[0];
-  if (!ret) {
-    return "<unknown>";
+  ULONG u_return = 0;
+  IWbemClassObject* obj = nullptr;
+  int gpu_id = 0;
+  while (wmi.enumerator) {
+    wmi.enumerator->Next(WBEM_INFINITE, 1, &obj, &u_return);
+    if (!u_return) {
+      break;
+    }
+    GPU gpu;
+    gpu._id = gpu_id++;
+    VARIANT vt_prop;
+    HRESULT hr;
+    hr = obj->Get(L"Name", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      gpu._name = utils::wstring_to_std_string(vt_prop.bstrVal);
+    }
+    hr = obj->Get(L"AdapterCompatibility", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      gpu._vendor = utils::wstring_to_std_string(vt_prop.bstrVal);
+    }
+    hr = obj->Get(L"DriverVersion", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      gpu._driverVersion = utils::wstring_to_std_string(vt_prop.bstrVal);
+    }
+    hr = obj->Get(L"AdapterRam", 0, &vt_prop, nullptr, nullptr);
+    if (SUCCEEDED(hr)) {
+      gpu._memory_Bytes = vt_prop.intVal;
+    }
+    VariantClear(&vt_prop);
+    obj->Release();
+    gpus.push_back(std::move(gpu));
   }
-  std::wstring tmp(ret);
-  return {tmp.begin(), tmp.end()};
-}
-
-// _____________________________________________________________________________________________________________________
-std::string GPU::getDriverVersion() {
-  std::vector<const wchar_t*> driverVersion{};
-  wmi::queryWMI("WIN32_VideoController", "DriverVersion", driverVersion);
-  auto ret = driverVersion[0];
-  if (!ret) {
-    return "<unknown>";
+#ifdef USE_OCL
+  auto cl_gpus = mcl::DeviceManager::get_list<mcl::Filter::GPU>();
+  for (auto& gpu : gpus) {
+    for (auto* cl_gpu : cl_gpus) {
+      if (cl_gpu->name() == gpu.name()) {
+        gpu._driverVersion = cl_gpu->driver_version();
+        gpu._frequency_MHz = static_cast<int64_t>(cl_gpu->clock_frequency_MHz());
+        gpu._num_cores = static_cast<int>(cl_gpu->cores());
+        gpu._memory_Bytes = static_cast<int64_t>(cl_gpu->memory_Bytes());
+        break;
+      }
+    }
   }
-  std::wstring tmp(ret);
-  return {tmp.begin(), tmp.end()};
-}
-
-// _____________________________________________________________________________________________________________________
-int64_t GPU::getMemory_Bytes() {
-  std::vector<unsigned long long> memory{};
-  wmi::queryWMI("WIN32_VideoController", "AdapterRam", memory);
-  return static_cast<int64_t>(memory[0] * 2);
+#endif  // USE_OCL
+  return gpus;
 }
 
 }  // namespace hwinfo

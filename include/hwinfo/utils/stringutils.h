@@ -4,9 +4,14 @@
 #pragma once
 
 #include <codecvt>
+#include <cstdint>
 #include <cstring>
 #include <locale>
 #include <string>
+#include <vector>
+
+namespace hwinfo {
+namespace utils {
 
 /**
  * remove all white spaces (' ', '\t', '\n') from start and end of input
@@ -42,7 +47,7 @@ inline void strip(std::string& input) {
     }
     end_index--;
   }
-  if (end_index <= start_index) {
+  if (end_index < start_index) {
     input.assign("");
     return;
   }
@@ -148,12 +153,48 @@ inline std::string wstring_to_string() { return ""; }
 inline std::string wstring_to_std_string(const std::wstring& ws) {
   std::string str_locale = setlocale(LC_ALL, "");
   const wchar_t* wch_src = ws.c_str();
+
+#ifdef _MSC_VER
+  size_t n_dest_size;
+  wcstombs_s(&n_dest_size, nullptr, 0, wch_src, 0);
+  n_dest_size++;  // Increase by one for null terminator
+
+  char* ch_dest = new char[n_dest_size];
+  memset(ch_dest, 0, n_dest_size);
+
+  size_t n_convert_size;
+  wcstombs_s(&n_convert_size, ch_dest, n_dest_size, wch_src,
+             n_dest_size - 1);  // subtract one to ignore null terminator
+
+  std::string result_text = ch_dest;
+  delete[] ch_dest;
+#else
   size_t n_dest_size = wcstombs(NULL, wch_src, 0) + 1;
   char* ch_dest = new char[n_dest_size];
   memset(ch_dest, 0, n_dest_size);
   wcstombs(ch_dest, wch_src, n_dest_size);
   std::string result_text = ch_dest;
   delete[] ch_dest;
+#endif
+
   setlocale(LC_ALL, str_locale.c_str());
   return result_text;
 }
+
+/**
+ * Replace the std::string::starts_with function only available in C++20 and above.
+ * @param str
+ * @param prefix
+ * @return
+ */
+template <typename string_type, typename prefix_type>
+inline bool starts_with(const string_type& str, const prefix_type& prefix) {
+#ifdef __cpp_lib_starts_ends_with
+  return str.starts_with(prefix);
+#else
+  return str.rfind(prefix, 0) == 0;
+#endif
+}
+
+}  // namespace utils
+}  // namespace hwinfo

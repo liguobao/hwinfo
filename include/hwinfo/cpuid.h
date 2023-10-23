@@ -8,7 +8,8 @@
 #if defined(HWINFO_X86)
 
 #ifdef _MSC_VER
-#include <Windows.h>
+#include <intrin.h>
+#include <windows.h>
 #else
 #include <cpuid.h>
 #endif
@@ -26,7 +27,8 @@
 #define LVL_TYPE 0x0000ff00
 #define LVL_CORES 0x0000ffff
 
-namespace hwinfo::cpuid {
+namespace hwinfo {
+namespace cpuid {
 
 /**
  * cpuid wrapper for Linux, MacOS and Windows
@@ -44,6 +46,7 @@ inline void cpuid(uint32_t func_id, uint32_t sub_func_id, uint32_t regs[4]) {
 #endif
 }
 
-}  // namespace hwinfo::cpuid
+}  // namespace cpuid
+}  // namespace hwinfo
 
 #endif  // HWINFO_X86

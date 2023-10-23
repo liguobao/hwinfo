@@ -3,80 +3,75 @@
 
 #pragma once
 
-#include <optional>
+#include <hwinfo/platform.h>
+#include <hwinfo/utils/wmi_wrapper.h>
+
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace hwinfo {
 
-struct InstructionSet {
-  bool _isHTT = false;
-  bool _isSSE = false;
-  bool _isSSE2 = false;
-  bool _isSSE3 = false;
-  bool _isSSE41 = false;
-  bool _isSSE42 = false;
-  bool _isAVX = false;
-  bool _isAVX2 = false;
+#ifdef HWINFO_UNIX
+struct Jiffies {
+  Jiffies() {
+    working = -1;
+    all = -1;
+  }
 
-  bool _init_ = false;
+  Jiffies(const int64_t& _all, const int64_t& _working) {
+    all = _all;
+    working = _working;
+  }
+
+  int64_t working{-1};
+  int64_t all{-1};
 };
+#endif
 
 class CPU {
-  friend std::optional<CPU> getCPU(uint8_t socket_id);
+  friend std::vector<CPU> getAllCPUs();
 
  public:
-  CPU() = default;
-  CPU(int id);
   ~CPU() = default;
 
-  std::string& modelName();
-  std::string& vendor();
-  int cacheSize_Bytes();
-  int numPhysicalCores();
-  int numLogicalCores();
-  int maxClockSpeed_kHz();
-  int regularClockSpeed_kHz();
-  InstructionSet& instructionSet();
-
-  static int currentClockSpeed_kHz();
-
-  static std::string getModelName();
-  static std::string getVendor();
-  static int getNumPhysicalCores();
-  static int getNumLogicalCores();
-  static int getMaxClockSpeed_kHz();
-  static int getRegularClockSpeed_kHz();
-  static int getCacheSize_Bytes();
+  int id() const;
+  const std::string& modelName() const;
+  const std::string& vendor() const;
+  int64_t L1CacheSize_Bytes() const;
+  int64_t L2CacheSize_Bytes() const;
+  int64_t L3CacheSize_Bytes() const;
+  int numPhysicalCores() const;
+  int numLogicalCores() const;
+  int64_t maxClockSpeed_MHz() const;
+  int64_t regularClockSpeed_MHz() const;
+  int64_t currentClockSpeed_MHz(int thread_id) const;
+  std::vector<int64_t> currentClockSpeed_MHz() const;
+  double currentUtilisation() const;
+  double threadUtilisation(int thread_index) const;
+  std::vector<double> threadsUtilisation() const;
+  // double currentTemperature_Celsius() const;
+  const std::vector<std::string>& flags() const;
+  void init_jiffies() const;
 
  private:
+  CPU() = default;
+
+  int _id{-1};
   std::string _modelName;
   std::string _vendor;
-  int _numPhysicalCores = -1;
-  int _numLogicalCores = -1;
-  int _maxClockSpeed_kHz = -1;
-  int _regularClockSpeed_kHz = -1;
-  int _cacheSize_Bytes = -1;
-  InstructionSet _instructionSet;
+  int _numPhysicalCores{-1};
+  int _numLogicalCores{-1};
+  int64_t _maxClockSpeed_MHz{-1};
+  int64_t _regularClockSpeed_MHz{-1};
+  int64_t _L1CacheSize_Bytes{-1};
+  int64_t _L2CacheSize_Bytes{-1};
+  int64_t _L3CacheSize_Bytes{-1};
+  std::vector<std::string> _flags{};
 
-  int _id = 0;
+  mutable bool _jiffies_initialized = false;
 };
 
-class Socket {
- public:
-  explicit Socket(uint8_t id);
-  Socket(uint8_t id, const CPU& cpu);
-  ~Socket() = default;
-
-  class CPU& CPU();
-
- private:
-  uint8_t _id;
-  class CPU _cpu;
-};
-
-std::optional<CPU> getCPU(uint8_t socket_id);
-
-std::vector<Socket> getAllSockets();
+std::vector<CPU> getAllCPUs();
 
 }  // namespace hwinfo
